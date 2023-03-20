@@ -1,0 +1,166 @@
+---
+title: "Lab2_Group_F"
+author: "Bet Bardají, Jens Lagemann"
+date: "2022-12-16"
+output:
+  pdf_document: default
+  html_document: default
+---
+## 2) Import data
+```{r import}
+
+subject1 <- read.csv("./FOTsubject1.csv", header=FALSE, 
+                     col.names = c("time", "pressure", "flow"))
+
+subject2 <- read.csv("./FOTsubject2.csv", header=FALSE, 
+                     col.names = c("time", "pressure", "flow"))
+```
+
+## 3) Plot excitation signal (pressure) vs time
+
+```{r pressure_vs_time}
+plot(subject1$time,subject1$pressure, type='l', col='red', 
+     xlab='Time in s', 
+     ylab='Pressure in cmH2O',  
+     main='Excitation Signal')
+```
+
+## 4) Plot flow vs time of both subjects
+```{r flow_vs_time}
+plot(subject1$time, subject1$flow, 
+     type='l', 
+     col='red', 
+     xlab='Time in s', 
+     ylab='Flow in L/s', 
+     main='Flow')
+lines(subject2$time, subject2$flow, 
+      type='l', 
+      col='blue')
+legend("topleft",
+       c("Subject 1", "Subject 2"),
+       fill = c("red", "blue"))
+```
+
+There is a noticeable difference in the measured flow between the two patients. Subject 2 shows smaller peaks of flow across the entire measurement, meaning Subject 1 has a higher flow.
+
+## 5) Fourier Coefficients of signals
+
+```{r fourier coefficients}
+## Initialization 
+
+ckp1<-rep(0, times=61) # Fourier coefficients input signal patient 1
+ckp2<-ckp1 # Fourier coefficients input signal patient 2
+ckf1<-ckp1 # Fourier coefficients flow signals patient 1
+ckf2<-ckp1 # Fourier coefficients flow signals patient 2
+
+## We use tt for the time vector
+
+tt<- subject1$time
+
+kf<-seq(-30,30)
+kk<-1
+for (k in kf) {
+  wk<-2*pi*k
+  expk<-complex(real=cos(wk*tt), imaginary=-sin(wk*tt))
+  ckp1[kk]<-mean(subject1$pressure*expk)
+  ckp2[kk]<-mean(subject2$pressure*expk)
+  ckf1[kk]<-mean(subject1$flow*expk)
+  ckf2[kk]<-mean(subject2$flow*expk)
+  kk<-kk+1
+}
+
+## Plot the modulus squared of the Fourier coefficient vs Frequency in Hz. 
+## This is a representation of the Power Spectral Density
+modulus_squared <- function(x){
+  Re(x)**2 + Im(x)**2
+}
+
+pressure_spds_1 <- lapply(ckp1, modulus_squared)
+pressure_spds_2 <- lapply(ckp2, modulus_squared)
+flow_spds_1 <- lapply(ckf1, modulus_squared)
+flow_spds_2 <- lapply(ckf2, modulus_squared)
+
+plot(kf, pressure_spds_1, type='l', col='red', 
+     ylab = "Spectral density", 
+     xlab = "Frequency in Hz", 
+     main = "Pressure spectral density")
+lines(kf, pressure_spds_2, type='l', col='blue')
+
+plot(kf, flow_spds_1, type='l', col='red', 
+     ylab = "Spectral density", 
+     xlab = "Frequency in Hz", 
+     main = "Flow spectral density")
+lines(kf, flow_spds_2, type='l', col='blue')
+
+pressure_frequencies <- which(pressure_spds_1 > 0.001) - 31
+flow_frequencies <- which(flow_spds_1 > 0.001) - 31
+```
+As the excitation signal the frequencies -19. -12, -5, 5, 12, and 19 Hz are chosen. 
+The same frequencies are the main frequencies in the measured flow are the same as the input signal, as the flow measured is in response to the pressure frequency, filtering out the regular breathing. 
+
+## 6) Synthesized signal
+
+```{r Synthetic signal}
+synth_signal_1 <- rep(0, times=length(tt))
+synth_signal_2 <- rep(0, times=length(tt))
+
+for (f in flow_frequencies) {
+  wk <- 2*pi*f
+  expk<-complex(real = cos(wk*tt), imaginary = sin(wk*tt))
+  synth_signal_1 <- synth_signal_1 + ckp1[f + 31] * expk
+  synth_signal_2 <- synth_signal_2 + ckp2[f + 31] * expk
+}
+
+plot(tt, subject1$pressure, type='l', 
+     col='red',
+     xlab = "Time in s",
+     ylab = "Flow in L/s",
+     main = "Synthesized pressure signal")
+lines(tt, synth_signal_2, type = 'l', col='blue')
+```
+
+The synthesized signal is expected to be free of noise, since only the sinusoids of the main frequencies are present.
+In the real signal, while the spectral density for the non-main frequencies are small, they can be non-zero. Presenting noise in the measurements.
+
+## 7) Complex impedance
+
+```{r complex impedance}
+## Define a vector with the frequencies
+
+ff=c(-19, -12, -5, 5, 12, 19)
+
+## Selection of the indexes for the frequencies of interest
+
+ii<-kf %in% ff
+
+#### Estimate the Complex Impedance as a ratio of the Fourier coefficients
+
+complex_impedence_1 <- ckp1[ii]/ckf1[ii]
+complex_impedence_2 <- ckp2[ii]/ckf2[ii]
+print(complex_impedence_1)
+print(complex_impedence_2)
+
+```
+
+## 8) Real and imaginary part of complex impedance
+```{r real and imaginary impedance}
+plot(kf[ii], Re(complex_impedence_1),  
+     col='blue', 
+     ylim=c(0,4),
+     xlab = "Frequency in Hz",
+     ylab = "Real impedance",
+     main = "Real part of complex impedance")
+points(kf[ii], Re(complex_impedence_2),  col='red')
+
+#### Plot the imaginarey part of the respiratory impedance
+
+plot(kf[ii], Im(complex_impedence_1),  
+     col='blue', 
+     ylim=c(-4,4),
+     xlab = "Frequency in Hz",
+     ylab = "Imaginary impedance",
+     main = "Imaginary part of complex impedance")
+points(kf[ii], Im(complex_impedence_2),  col='red')
+```
+
+Looking at the imaginary part of the complex impedance, it's noticeable that subject 2, only crosses the 0 at a higher frequency close to 19, while subject 1 crosses the threshold closer to 12. Between that and the fact that subject 2 has shown to have lower flow measured, we would assume that subject 2 has COPD, while subject 1 presents a healthy reference.
